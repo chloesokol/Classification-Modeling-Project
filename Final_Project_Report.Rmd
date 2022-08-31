@@ -1,0 +1,184 @@
+---
+title: "Final Project Report"
+author: "Chloe Sokol"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    highlight: "tango"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, echo=FALSE}
+# Loaded Packages
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(png)
+library(ggplot2)
+library(patchwork)
+tidymodels_prefer()
+```
+
+## The Dataset and Research Question
+<br>
+The “diabetes” data set, as I have titled it, was found on Kaggle at (https://www.kaggle.com/alexteboul/diabetes-health-indicators-dataset). This cleaned data set was uploaded by Kaggle user Alex Teboul and last updated in November of 2021. The original data is from the Behavioral Risk Factor Surveillance System data set previously uploaded on Kaggle by the Centers for Disease Control and Prevention four years ago. The Behavioral Risk Factor Surveillance System (BRFSS) is a public health telephone survey collected annually by the CDC. This specific BRFSS survey has responses from over 441,455 Americans from 2011 to 2015 on 330 variables that cover health-related risk behaviors, chronic health conditions, and the use of preventative services. This smaller version of the data set holds information of diabetes-related health statistics. The cleaned version of the data set as uploaded by Alex Teboul holds 70,692 survey responses and is a smaller subset of a larger data set uploaded on the same page which holds 253,680 survey responses. The smaller data set was chosen to decrease the amount of time it would take to run model tuning. The target variable for the data set is `Diabetes_binary`, which has 2 classes: 0 is for no diabetes, and 1 is for pre-diabetes or diabetes. There are 21 feature variables and data set is balanced.
+<br><br>
+Diabetes is an incredibly prevalent disease in the United States where peoples’ bodies are either not making enough insulin or are unable to use the insulin that is made as effectively as needed. Though there is no cure, many other factors can affect the severity of a patients condition, such as living a healthy lifestyle and recieving treatment, which is most effective when the diagnosis is early. This is why predictive modeling with data on diabetes and risk factors is so important. The natural classification research question for this data set is what model is best for classifying the outcome variable, `diabetes_binary`? A good model will have a high accuracy measure for this binary variable as well as a high value for the roc curve. 
+<br>
+
+## An Exploratory Data Analysis
+<br>
+All variables for this dataset were originally numeric: Diabetes_binary, HighBP, HighChol, CholCheck, BMI, Smoker, Stroke, HeartDiseaseorAttack, PhysActivity, Fruits, Veggies, HvyAlcoholConsump, AnyHeathcare, NoDocbcCost, GenHlth, MentHlth, PhysHlth, DiffWalk, Sex, Age, Education, Income. All variables have no missing observations, so there were difficulties in data collection or analysis for missing values. All variables except BMI, Genhlth, MentHlth, PhysHelth, Age, Education, and Income are on a binary scale. The EDA data set is a separate data set than the testing and training one. It contains 35,346 observations and there are 35,346 separate observations reserved for the testing and training sets. 
+<br><br>
+```{r, warning=FALSE, messages=FALSE, echo=FALSE}
+diabetes <- read_csv("data/diabetes_binary.csv", show_col_types = FALSE)
+diabetes <- diabetes %>%
+  janitor::clean_names() %>%
+  mutate(diabetes_binary = ifelse(diabetes_binary == 0, "No", "Yes"),
+         diabetes_binary = factor(diabetes_binary, ordered = TRUE))
+set.seed(3012)
+
+# Creating EDA data set
+diabetes_initial_split <- diabetes %>%
+  initial_split(prop = 0.50, strata = diabetes_binary)
+
+# Creating the EDA set
+diabetes_eda <- diabetes_initial_split %>% 
+  testing()
+
+skim_without_charts(diabetes_eda)
+```
+<br><br>
+The outcome variable, `Diabetes_binary`, was made into a factor and changed to a character value of "No" for 0, corresponding to no diabetes, and "Yes" for 1, corresponding to for pre-diabetes or diabetes. This was done for ease of interpretation. There is an equal balance in values of "Yes" and "No" for the outcome variable in the EDA data set. In a correlation plot for the EDA dataset, the strongest relationships with the outcome variable are with measures of cholesterol, age, blood pressure, body mass index, and difficulty walking.
+<br><br>
+```{r, echo=FALSE}
+diabetes_eda %>%
+  ggplot(aes(x=diabetes_binary)) + geom_bar()
+```
+<br><br>
+![plot1](images/Rplot.png)
+<br><br>
+![plot1](images/Rplot01.png)
+<br><br>
+![plot1](images/Rplot02.png)
+<br><br>
+![plot1](images/Rplot03.png)
+<br><br>
+![plot1](images/Rplot04.png)
+<br><br>
+![plot1](images/Rplot05.png)
+<br><br>
+
+## Attempted Models
+<br>
+The first recipe was very basic, with the outcome variable predicted by all other variables and with no interactions. This model did include one-hot encoding. The models fitted to the training data set were basic logistic regression, elastic net regression tuned to include both a ridge and lasso model, random forest, nearest neighbors, and boosted tree. All models except the basic logistic regression model utilized tuning to find the most optimal parameters. Through a tuning process that occurred over cross-validation with 10 folds with 5 repeats and strata set to the outcome variable, the optimal random forest model had `mtry=6` and `min_n=40`, the optimal elastic net model had `penalty=0.0000000001` and `mixture=0.25`, the optimal nearest neighbors had `neighbors=15`, and the optimal boosted tree model had `mtry=6`, `min_n=40`, and `learn_rate=0.631`. Each optimal model for logistic regression, random forest, elastic net, nearest neighbors, and boosted tree resulted in a mean accuracy metric across folds of 0.749, 0.751, 0.749, 0.720, and 0.750 respectively. With the highest mean value of accuracy across folds, the optimal random forest model had `mtry=6` and `min_n=40` was the best performing model as shown below. 
+<br>
+```{r, echo=FALSE}
+load(file="results/rf_tuned.rda")
+
+autoplot(rf_tuned, metric = "accuracy")
+```
+<br>
+The second recipe was more complex, with the outcome variable predicted by all other variables except `any_healthcare`, `no_docbc_cost`, `sex` and with interactions between  `high_bp` and `high_chol` as well as between `age` and `diff_walk`. The models fitted to the training data set were again, basic logistic regression, elastic net regression tuned to include both a ridge and lasso model, random forest, nearest neighbors, and boosted tree. All models except the basic logistic regression model utilized tuning to find the most optimal parameters. Through a tuning process that occurred over cross-validation with 10 folds with 5 repeats and strata set to the outcome variable, the optimal random forest model had `mtry=5` and `min_n=40`, the optimal elastic net model had `penalty=0.0000000001` and `mixture=0.5`, the optimal nearest neighbors had `neighbors=15`, and the optimal boosted tree model had `mtry=5`, `min_n=21`, and `learn_rate=0.631`. Each optimal model for logistic regression, random forest, elastic net, nearest neighbors, and boosted tree resulted in a mean accuracy metric across folds of 0.749, 0.750, 0.748, 0.722, and 0.750 respectively. With the highest mean value of accuracy across folds, and the lowest standard error (0.000933), the optimal boosted tree model was the best performing model with this recipe as shown below, though it was not a better model than the optimal random forest model of the first recipe. 
+<br>
+```{r, echo=FALSE}
+load(file="results/boost_tuned2.rda")
+
+autoplot(boost_tuned2, metric = "accuracy")
+```
+<br>
+The third recipe was more like the first recipe, except I did not one-hot encode all nominal predictors. The models fitted to the training data set were again, basic logistic regression, elastic net regression tuned to include both a ridge and lasso model, random forest, nearest neighbors, and boosted tree. All models except the basic logistic regression model utilized tuning to find the most optimal parameters. Through a tuning process that occurred over cross-validation with 10 folds with 5 repeats and strata set to the outcome variable, the optimal random forest model had `mtry=6` and `min_n=40`, the optimal elastic net model had `penalty=0.0000000001` and `mixture=0.25`, the optimal nearest neighbors had `neighbors=15`, and the optimal boosted tree model had `mtry=11`, `min_n=30`, and `learn_rate=0.631`. Each optimal model for logistic regression, random forest, elastic net, nearest neighbors, and boosted tree resulted in a mean accuracy metric across folds of 0.749, 0.751, 0.749, 0.720, and 0.751 respectively. With the highest mean value of accuracy across folds, and the lowest standard error (0.000940), the optimal boosted tree model was the best performing model with this recipe as shown below. It has the same mean accuracy as optimal random forest model of the first recipe, but a lower standard error, making it the best model overall. 
+<br>
+```{r, echo=FALSE}
+load(file="results/boost_tuned3.rda")
+
+autoplot(boost_tuned3, metric = "accuracy")
+```
+<br>
+<br><br>
+
+## The Final Model
+<br>
+When the final model, boosted tree with `mtry=11`, `min_n=30`, and `learn_rate=0.631`, and with the third recipe, was applied to the testing data set, there was a resulting accuracy value of 0.741, which is not as high as the 0.751 from the testing set, but not far off. A confusion matrix of the results from the model run on the testing set shows that of the 5,302 observations in the testing set, 1,860 values of "No" were correctly predicted and 2,070 values of "Yes" were correctly predicted. On the other hand, 791 real values of "No" were incorrectly predicted as "Yes" and 581 real values of "Yes" were incorrectly predicted as "No". 
+<br><br>
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(3012)
+diabetes_initial_split <- diabetes %>%
+  initial_split(prop = 0.50, strata = diabetes_binary)
+diabetes_eda <- diabetes_initial_split %>% 
+  testing()
+diabetes_not_eda <- diabetes_initial_split %>% 
+  training()
+diabetes_split <- diabetes_not_eda %>%
+  initial_split(prop = 0.85, strata = diabetes_binary)
+diabetes_train <- diabetes_split %>% 
+  training()
+diabetes_test <- diabetes_split %>% 
+  testing()
+
+diabetes_recipe3 <- recipe(diabetes_binary ~ ., diabetes_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
+boost_tree_spec <-
+  boost_tree(mode = 'classification',
+             mtry = tune(), 
+             min_n = tune(), 
+             learn_rate = tune()) %>%
+  set_engine('xgboost')
+
+boost_workflow3 <- workflow() %>% 
+  add_model(boost_tree_spec) %>% 
+  add_recipe(diabetes_recipe3)
+
+## Autoplot
+load(file="results/boost_tuned3.rda")
+
+## Fit New Model
+boost_workflow_tuned <- boost_workflow3 %>% 
+  finalize_workflow(select_best(boost_tuned3, metric = "accuracy"))
+
+set.seed(3012)
+boost_results <- fit(boost_workflow_tuned, diabetes_train)
+
+## Testing Set
+set.seed(3012)
+boost_test_res <- predict(boost_results, new_data = diabetes_test) 
+
+predicted_values <- diabetes_test %>%
+  select(diabetes_binary) %>%
+  bind_cols(boost_test_res)
+
+## Confusion Matrix
+conf_mat(predicted_values, diabetes_binary, .pred_class)
+```
+<br><br>
+The calculated area under the receiver operating characteristic curve for predictions of "No" was 0.823, indicating a good model for predicting the value "No". Alternatively, the calculated area under the receiver operating characteristic curve for predictions of "Yes" was 0.177, indicating a bad model for predicting the value "Yes". These results indicate that the random forest model with optimal parameters found via tuning yield a satisfactory model for predicting a value of "No" for `diabetes_binary`, meaning no diabetes or pre-diabetes. Since there was a 50/50 balance of values for "Yes" and "No" in the outcome variable, the null model would yield a value of 0.50 accuracy, much lower than either 0.751 from the training set or 0.741 from the testing set.
+<br><br>
+```{r, echo=FALSE}
+## Predicted Class Probabilities
+boost_test_res <- predict(boost_results, new_data = diabetes_test, type="prob") 
+
+predicted_values_class <- diabetes_test %>%
+  select(diabetes_binary) %>%
+  bind_cols(boost_test_res)
+
+## ROC Curve
+boost_curve_no <- roc_curve(predicted_values_class, diabetes_binary, .pred_No)
+autoplot(boost_curve_no)
+
+boost_curve_yes <- roc_curve(predicted_values_class, diabetes_binary, .pred_Yes)
+autoplot(boost_curve_yes)
+```
+
+<br>
+
+## Next Steps
+<br>
+The gradient-boosted tree model, the final model chosen for this project, is effective for both regression and classification problems. It is a very flexible model that worked very well on our large data set. Its additive model component is an iterative approach to adding trees that bring us closer to our final model. After each iteration, the value of the loss function, the estimate of how good the model is at making predictions with the given data, is reduced.
+<br><br>
+Additional data resources that would help improve the performance of the model include testing other recipes. The correlation plot of the EDA data set showed all relationships between predictor variables and the outcome variable, as well as between predictor variables. A deeper exploratory data analysis could result in more model types with different predictor variables removed from the recipe and different combinations of interactions for both a recipe with one-hot dummy encoding and without. These ideas are derived from the new research question of what predictors work best for the classification of our outcome variable, `diabetes_binary`?

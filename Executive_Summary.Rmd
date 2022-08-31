@@ -1,0 +1,61 @@
+---
+title: "Executive Summary"
+author: "Chloe Sokol"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    highlight: "tango"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE, echo=FALSE}
+# Loaded Packages
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(png)
+library(ggplot2)
+library(patchwork)
+tidymodels_prefer()
+```
+
+### Overview
+Through the process of an initial EDA, feature engineering and model refinement as well as evaluation, the optimal model chosen for the data set of diabetes indicators from the Behavioral Risk Factor Surveillance System (https://www.kaggle.com/alexteboul/diabetes-health-indicators-dataset), was a gradient-boosted tree with `mtry=11`, `min_n=30`, and `learn_rate=0.631`. 
+
+### The Question
+<br>
+Through exploratory data analysis of the diabetes data set, the question arose what model is best for classifying the outcome variable, `diabetes_binary`? In order to create possible recipes for the classification model, a correlation plot of the data set was created.
+<br><br>
+![plot1](images/Rplot.png)
+<br>
+
+### The Execution
+Three recipes were tested on the training data set, a basic recipe with one-hot encoding, a basic recipe without one-hot encoding, and a more complex recipe with some predictor variables removed and interactions included. The models fitted to the training data set were basic logistic regression, elastic net regression tuned to include both a ridge and lasso model, random forest, nearest neighbors, and boosted tree. All models except the basic logistic regression model utilized tuning to find the most optimal parameters. Through a tuning process that occurred over cross-validation with 10 folds with 5 repeats and strata set to the outcome variable, the optimal model was determined to be the gradient boosted tree with `mtry=11`, `min_n=30`, and `learn_rate=0.631` with the basic recipe without one-hot encoding. This model had the highest accuracy rating of 0.751, and the lowest standard error measure of any other model with the same accuracy. 
+<br><br>
+```{r, echo=FALSE}
+load(file="results/boost_tuned3.rda")
+
+autoplot(boost_tuned3, metric = "accuracy")
+```
+<br>
+
+### The Solution
+<br>
+After the final model was chosen, it was applied to the testing data set and a resulting accuracy of 0.741. Since the executive data analysis showed a 50/50 balance in "Yes" and "No" for the outcome variable, pertaining to "diabetes or pre-diabetes" and "no diabetes" respectively, a null model would have a 0.500 accuracy value. In comparison to the null model, the final gradient boosted tree model was determined to be a good model. The area under the ROC curve for "No" was 0.823, making the model a good predictor of "no diabetes", while the area under the ROC curve for "Yes" was 0.177, making the model a bad predictor of "diabetes or pre-diabetes". 
+<br><br>
+ROC Curve for "No"
+<br>
+![plot1](images/ROCplot.png)
+<br><br>
+ROC Curve for "Yes"
+<br>
+![plot1](images/ROCplot2.png)
+<br><br>
+Next steps for this model include testing other recipes through a re-evaluation of the correlation plot of the EDA data set. Additional recipe steps gained from this could be applied to both a recipe with one-hot dummy encoding and without. This drives the new research question of what predictors work best for the classification of our outcome variable, `diabetes_binary`?
+
+

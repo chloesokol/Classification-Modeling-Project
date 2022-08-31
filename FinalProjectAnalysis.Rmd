@@ -1,0 +1,500 @@
+---
+title: "Final Project Work"
+author: "Chloe Sokol"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    highlight: "tango"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Packages
+
+```{r, message=FALSE, echo=FALSE}
+# Loaded Packages
+library(tidyverse)
+library(skimr)
+library(tidymodels)
+library(corrplot)
+library(RColorBrewer)
+tidymodels_prefer()
+```
+
+### Loading the Dataset
+
+```{r, message=FALSE, warning=FALSE}
+diabetes <- read_csv("data/diabetes_binary.csv")
+```
+
+### Splitting the Dataset
+
+```{r}
+diabetes <- diabetes %>%
+  janitor::clean_names() %>%
+  mutate(diabetes_binary = ifelse(diabetes_binary == 0, "No", "Yes"),
+         diabetes_binary = factor(diabetes_binary, ordered = TRUE))
+
+set.seed(3012)
+
+# Creating EDA data set
+diabetes_initial_split <- diabetes %>%
+  initial_split(prop = 0.50, strata = diabetes_binary)
+
+# Creating the EDA set
+diabetes_eda <- diabetes_initial_split %>% 
+  testing()
+
+# Creating testing/training set
+diabetes_not_eda <- diabetes_initial_split %>% 
+  training()
+
+nrow(diabetes_eda)
+nrow(diabetes_eda)
+
+# Non-EDA Initial Split
+diabetes_split <- diabetes_not_eda %>%
+  initial_split(prop = 0.85, strata = diabetes_binary)
+
+# Creating Testing and Training Sets
+diabetes_train <- diabetes_split %>% 
+  training()
+diabetes_test <- diabetes_split %>% 
+  testing()
+
+# Verifying Split Proportion
+nrow(diabetes_train)
+nrow(diabetes_test)
+```
+
+### Making Folds
+
+```{r}
+diabetes_fold <- vfold_cv(diabetes_train, v = 10, repeats = 5, strata = diabetes_binary)
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+```
+
+
+### Recipe
+
+```{r}
+diabetes_recipe <- recipe(diabetes_binary ~ ., diabetes_train) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_normalize(all_numeric_predictors())
+
+diabetes_recipe %>%
+  prep() %>%
+  bake(new_data = diabetes_train)
+
+diabetes_recipe2 <- recipe(diabetes_binary ~ ., diabetes_train) %>%
+  step_rm(any_healthcare, no_docbc_cost, sex) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_interact(~ high_bp:high_chol + age:diff_walk) %>%
+  step_normalize(all_numeric_predictors())
+
+diabetes_recipe2 %>%
+  prep() %>%
+  bake(new_data = diabetes_train)
+
+diabetes_recipe3 <- recipe(diabetes_binary ~ ., diabetes_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
+diabetes_recipe3 %>%
+  prep() %>%
+  bake(new_data = diabetes_train)
+```
+
+
+### Specs
+ 
+```{r}
+# random forest
+rand_forest_spec <-
+  rand_forest(mode = 'classification',
+              min_n = tune(),
+              mtry = tune()) %>%
+  set_engine('randomForest')
+
+# logistic regression
+log_spec <-
+  logistic_reg() %>%
+  set_engine('glm')
+
+# elastic net regression
+en_spec <-
+  logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine('glmnet')
+
+# nearest neighbors
+kknn_spec <-
+  nearest_neighbor(mode = 'classification',
+                   neighbors = tune()) %>%
+  set_engine('kknn')
+
+# boosted tree
+boost_tree_spec <-
+  boost_tree(mode = 'classification',
+             mtry = tune(), 
+             min_n = tune(), 
+             learn_rate = tune()) %>%
+  set_engine('xgboost')
+```
+
+ 
+### Make grids/ parameters
+
+```{r}
+# random forest
+rf_params <- parameters(rand_forest_spec) %>% 
+  update(mtry = mtry(c(1, 21))) 
+rf_grid <- grid_regular(rf_params, levels = 5)
+
+rf_params2 <- parameters(rand_forest_spec) %>% 
+  update(mtry = mtry(c(1, 20))) 
+rf_grid2 <- grid_regular(rf_params2, levels = 5)
+
+# logistic regression
+# nothing to tune
+
+# elastic net regression
+en_params <- parameters(en_spec) %>%
+  update(mixture = mixture(c(0, 1)))
+en_grid <- grid_regular(en_params, levels = 5)
+
+# nearest neighbors
+kknn_params <- parameters(kknn_spec)
+kknn_grid <- grid_regular(kknn_params, levels = 5)
+
+# boosted tree
+boost_params <- parameters(boost_tree_spec) %>%
+  update(mtry = mtry(c(1, 21))) %>%
+  update(learn_rate = learn_rate(c(-5, -0.2)))
+boost_grid <- grid_regular(boost_params, levels = 5)
+
+boost_params2 <- parameters(boost_tree_spec) %>%
+  update(mtry = mtry(c(1, 20))) %>%
+  update(learn_rate = learn_rate(c(-5, -0.2)))
+boost_grid <- grid_regular(boost_params2, levels = 5)
+```
+
+
+### Workflows
+```{r}
+# random forest
+rf_workflow <- workflow() %>% 
+  add_model(rand_forest_spec) %>% 
+  add_recipe(diabetes_recipe)
+
+rf_workflow2 <- workflow() %>% 
+  add_model(rand_forest_spec) %>% 
+  add_recipe(diabetes_recipe2)
+
+rf_workflow3 <- workflow() %>% 
+  add_model(rand_forest_spec) %>% 
+  add_recipe(diabetes_recipe3)
+
+# logistic regression
+log_workflow <- workflow() %>% 
+  add_model(log_spec) %>% 
+  add_recipe(diabetes_recipe)
+
+log_workflow2 <- workflow() %>% 
+  add_model(log_spec) %>% 
+  add_recipe(diabetes_recipe2)
+
+log_workflow3 <- workflow() %>% 
+  add_model(log_spec) %>% 
+  add_recipe(diabetes_recipe3)
+
+# elastic net regression
+en_workflow <- workflow() %>% 
+  add_model(en_spec) %>% 
+  add_recipe(diabetes_recipe)
+
+en_workflow2 <- workflow() %>% 
+  add_model(en_spec) %>% 
+  add_recipe(diabetes_recipe2)
+
+en_workflow3 <- workflow() %>% 
+  add_model(en_spec) %>% 
+  add_recipe(diabetes_recipe3)
+
+# nearest neighbors
+kknn_workflow <- workflow() %>% 
+  add_model(kknn_spec) %>% 
+  add_recipe(diabetes_recipe)
+
+kknn_workflow2 <- workflow() %>% 
+  add_model(kknn_spec) %>% 
+  add_recipe(diabetes_recipe2)
+
+kknn_workflow3 <- workflow() %>% 
+  add_model(kknn_spec) %>% 
+  add_recipe(diabetes_recipe3)
+
+# boosted tree
+boost_workflow <- workflow() %>% 
+  add_model(boost_tree_spec) %>% 
+  add_recipe(diabetes_recipe)
+
+boost_workflow2 <- workflow() %>% 
+  add_model(boost_tree_spec) %>% 
+  add_recipe(diabetes_recipe2)
+
+boost_workflow3 <- workflow() %>% 
+  add_model(boost_tree_spec) %>% 
+  add_recipe(diabetes_recipe3)
+```
+
+
+### Tuning
+```{r, eval=FALSE}
+# random forest
+rf_tuned <- rf_workflow %>% 
+  tune_grid(diabetes_fold, grid = rf_grid)
+save(rf_tuned, file = "results/rf_tuned.rda")
+
+rf_tuned2 <- rf_workflow2 %>% 
+  tune_grid(diabetes_fold, grid = rf_grid2)
+save(rf_tuned2, file = "results/rf_tuned2.rda")
+
+rf_tuned3 <- rf_workflow3 %>% 
+  tune_grid(diabetes_fold, grid = rf_grid)
+save(rf_tuned3, file = "results/rf_tuned3.rda")
+
+# logistic regression
+log_fit <- log_workflow %>%
+  fit_resamples(resamples = diabetes_fold, control = keep_pred)
+save(log_fit, file = "results/log_fit.rda")
+
+log_fit2 <- log_workflow2 %>%
+  fit_resamples(resamples = diabetes_fold, control = keep_pred)
+save(log_fit2, file = "results/log_fit2.rda")
+
+log_fit3 <- log_workflow3 %>%
+  fit_resamples(resamples = diabetes_fold, control = keep_pred)
+save(log_fit3, file = "results/log_fit3.rda")
+
+# elastic net regression
+en_tuned <- en_workflow %>% 
+  tune_grid(diabetes_fold, grid = en_grid)
+save(en_tuned, file = "results/en_tuned.rda")
+
+en_tuned2 <- en_workflow2 %>% 
+  tune_grid(diabetes_fold, grid = en_grid)
+save(en_tuned2, file = "results/en_tuned2.rda")
+
+en_tuned3 <- en_workflow3 %>% 
+  tune_grid(diabetes_fold, grid = en_grid)
+save(en_tuned3, file = "results/en_tuned3.rda")
+
+# nearest neighbors
+kknn_tuned <- kknn_workflow %>% 
+  tune_grid(diabetes_fold, grid = kknn_grid)
+save(kknn_tuned, file = "results/kknn_tuned.rda")
+
+kknn_tuned2 <- kknn_workflow2 %>% 
+  tune_grid(diabetes_fold, grid = kknn_grid)
+save(kknn_tuned2, file = "results/kknn_tuned2.rda")
+
+kknn_tuned3 <- kknn_workflow3 %>% 
+  tune_grid(diabetes_fold, grid = kknn_grid)
+save(kknn_tuned3, file = "results/kknn_tuned3.rda")
+
+# boosted tree
+boost_tuned <- boost_workflow %>% 
+  tune_grid(diabetes_fold, grid = boost_grid)
+save(boost_tuned, file = "results/boost_tuned.rda")
+
+boost_tuned2 <- boost_workflow2 %>% 
+  tune_grid(diabetes_fold, grid = boost_grid2)
+save(boost_tuned2, file = "results/boost_tuned2.rda")
+
+boost_tuned3 <- boost_workflow3 %>% 
+  tune_grid(diabetes_fold, grid = boost_grid)
+save(boost_tuned3, file = "results/boost_tuned3.rda")
+```
+
+### Autoplot
+```{r}
+load(file="results/rf_tuned.rda")
+load(file="results/log_fit.rda")
+load(file="results/en_tuned.rda")
+load(file="results/kknn_tuned.rda")
+load(file="results/boost_tuned.rda")
+
+autoplot(rf_tuned, metric = "accuracy")
+autoplot(en_tuned, metric = "accuracy")
+autoplot(kknn_tuned, metric = "accuracy")
+autoplot(boost_tuned, metric = "accuracy")
+
+load(file="results/rf_tuned2.rda")
+load(file="results/log_fit2.rda")
+load(file="results/en_tuned2.rda")
+load(file="results/kknn_tuned2.rda")
+load(file="results/boost_tuned2.rda")
+
+autoplot(rf_tuned2, metric = "accuracy")
+autoplot(en_tuned2, metric = "accuracy")
+autoplot(kknn_tuned2, metric = "accuracy")
+autoplot(boost_tuned2, metric = "accuracy")
+
+load(file="results/rf_tuned3.rda")
+load(file="results/log_fit3.rda")
+load(file="results/en_tuned3.rda")
+load(file="results/kknn_tuned3.rda")
+load(file="results/boost_tuned3.rda")
+
+autoplot(rf_tuned3, metric = "accuracy")
+autoplot(en_tuned3, metric = "accuracy")
+autoplot(kknn_tuned3, metric = "accuracy")
+autoplot(boost_tuned3, metric = "accuracy")
+```
+
+### Select best
+```{r}
+select_best(rf_tuned, metric = "accuracy")
+select_best(en_tuned, metric = "accuracy")
+select_best(kknn_tuned, metric = "accuracy")
+select_best(boost_tuned, metric = "accuracy")
+
+select_best(rf_tuned2, metric = "accuracy")
+select_best(en_tuned2, metric = "accuracy")
+select_best(kknn_tuned2, metric = "accuracy")
+select_best(boost_tuned2, metric = "accuracy")
+
+select_best(rf_tuned3, metric = "accuracy")
+select_best(en_tuned3, metric = "accuracy")
+select_best(kknn_tuned3, metric = "accuracy")
+select_best(boost_tuned3, metric = "accuracy")
+```
+
+### Collect Metrics
+```{r}
+collect_metrics(log_fit)
+
+rf_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+en_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+kknn_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+boost_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+collect_metrics(log_fit2)
+
+rf_tuned2 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+en_tuned2 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+kknn_tuned2 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+boost_tuned2 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+collect_metrics(log_fit3)
+
+rf_tuned3 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+en_tuned3 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+kknn_tuned3 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+
+boost_tuned3 %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  arrange(desc(mean))
+```
+
+### Choose model
+Random Forest had the best fold with a mean accuracy of 0.751. The best random forest model has 'mtry' = 6 and 'min_n = 40'
+
+```{r}
+boost_workflow_tuned <- boost_workflow3 %>% 
+  finalize_workflow(select_best(boost_tuned3, metric = "accuracy"))
+
+set.seed(3012)
+boost_results <- fit(boost_workflow_tuned, diabetes_train)
+```
+
+### Fit chosen model to testing data
+```{r}
+set.seed(3012)
+boost_test_res <- predict(boost_results, new_data = diabetes_test) 
+```
+
+### Predictions 
+```{r}
+predicted_values <- diabetes_test %>%
+  select(diabetes_binary) %>%
+  bind_cols(boost_test_res)
+predicted_values
+```
+
+### Accuracy
+```{r}
+accuracy(predicted_values, diabetes_binary, .pred_class)
+```
+
+### Confusion Matrix
+```{r}
+conf_mat(predicted_values, diabetes_binary, .pred_class)
+```
+
+### Predicted class probabilities
+```{r}
+boost_test_res <- predict(boost_results, new_data = diabetes_test, type="prob") 
+
+predicted_values_class <- diabetes_test %>%
+  select(diabetes_binary) %>%
+  bind_cols(boost_test_res)
+predicted_values_class
+```
+
+### ROC curve
+```{r}
+boost_curve_no <- roc_curve(predicted_values_class, diabetes_binary, .pred_No)
+autoplot(boost_curve_no)
+roc_auc(predicted_values_class, diabetes_binary, .pred_No)
+
+boost_curve_yes <- roc_curve(predicted_values_class, diabetes_binary, .pred_Yes)
+autoplot(boost_curve_yes)
+roc_auc(predicted_values_class, diabetes_binary, .pred_Yes)
+```
+
